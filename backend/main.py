@@ -21,7 +21,8 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.router import api_router
-from app.db.database import init_db
+from app.db.database import init_db, SessionLocal
+from app.services.audit_service import audit_engine, AuditCategory, AuditSeverity, AuditClassification
 
 # ─────────────────────────────────────────────
 # Logging structuré (SOC 2 CC7.2 — Monitoring)
@@ -93,6 +94,7 @@ async def audit_trail_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     start = time.time()
     client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent")
 
     logger.info(
         f"[REQ {request_id}] {request.method} {request.url.path} | IP={client_ip}"
@@ -100,8 +102,10 @@ async def audit_trail_middleware(request: Request, call_next):
 
     try:
         response = await call_next(request)
+        status_code = response.status_code
     except Exception as exc:
         logger.error(f"[REQ {request_id}] UNHANDLED ERROR: {exc}")
+        status_code = 500
         response = JSONResponse(
             status_code=500,
             content={"detail": "Erreur interne du serveur", "request_id": request_id},
@@ -109,8 +113,40 @@ async def audit_trail_middleware(request: Request, call_next):
 
     duration_ms = round((time.time() - start) * 1000, 2)
     logger.info(
-        f"[RES {request_id}] status={response.status_code} | duration={duration_ms}ms"
+        f"[RES {request_id}] status={status_code} | duration={duration_ms}ms"
     )
+
+    # ─────────────────────────────────────────────────────────────
+    # PERSISTENCE IMMUABLE (Anti-Tamper Governance)
+    # ─────────────────────────────────────────────────────────────
+    # Détermination de la classification (simulée)
+    classification = AuditClassification.INTERNAL
+    if "financial" in request.url.path or "ai" in request.url.path:
+        classification = AuditClassification.CONFIDENTIAL
+    
+    # Détermination de la sévérité
+    severity = AuditSeverity.INFO
+    if status_code >= 400:
+        severity = AuditSeverity.WARNING
+    if status_code >= 500:
+        severity = AuditSeverity.CRITICAL
+
+    # Capture en base de données via une session dédiée
+    with SessionLocal() as db:
+        try:
+            audit_engine.capture_event(
+                db=db,
+                user_id="USER_SYSTEM", # Idéalement extrait du JWT
+                action_name=f"{request.method} {request.url.path}",
+                category=AuditCategory.DATA_ACCESS,
+                severity=severity,
+                classification=classification,
+                ip_address=client_ip,
+                user_agent=user_agent,
+                request_id=request_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist audit log: {e}")
 
     # Ajouter des headers de sécurité (OWASP)
     response.headers["X-Request-ID"] = request_id

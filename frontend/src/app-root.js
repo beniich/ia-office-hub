@@ -49,6 +49,27 @@ export class AppRoot extends LitElement {
     this.loading = false;
   }
 
+  async handleDownloadAudit() {
+    this.loading = true;
+    try {
+      const response = await axios.get(`${API_BASE}/api/v1/ai/compliance-pack/1`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'Compliance_Pack_P1.odt');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors du téléchargement du rapport d'audit");
+    }
+    this.loading = false;
+  }
+
   render() {
     return html`
       <div class="flex flex-col h-screen bg-[#B0B0B0] text-black overflow-hidden font-sans select-none">
@@ -99,7 +120,11 @@ export class AppRoot extends LitElement {
             </button>
           </div>
 
-          <div class="ml-auto pr-4">
+          <div class="ml-auto pr-4 flex gap-2">
+             <button @click=${this.handleDownloadAudit} ?disabled=${this.loading} class="bg-emerald-600 text-white text-[10px] px-3 py-1 rounded-md shadow-sm hover:bg-emerald-700 disabled:bg-gray-400 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></svg>
+                Exporter Rapport d'Audit
+             </button>
              <button @click=${this.handleAnalyze} ?disabled=${this.loading} class="bg-blue-600 text-white text-[10px] px-3 py-1 rounded-md shadow-sm hover:bg-blue-700 disabled:bg-gray-400 flex items-center gap-2">
                 ${this.loading ? html`<div class="animate-spin rounded-full h-3 w-3 border-t-2 border-white"></div>` : html`<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>`}
                 Lancer Diagnostic IA

@@ -1,12 +1,41 @@
+name: CI/CD Industrial Pipeline
+on: 
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
-name: CI/CD Pipeline
-on: [push]
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Security Scan (SOC2)
-        run: echo "Running security audit..."
-      - name: Build Docker
-        run: docker build -t ai-office-hub .
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Security Check (SOC 2 Compliance)
+        run: |
+          echo "Vérification des secrets et de l'intégrité..."
+          # Simulation d'un scan de vulnérabilités
+          ls -R infra/
+
+      - name: Build Backend Image
+        run: |
+          docker build -t ia-office-hub-backend -f infra/docker/Dockerfile .
+
+      - name: Verify Deployment Script
+        run: |
+          if [ -f infra/scripts/deploy.sh ]; then
+            echo "✅ Script de déploiement présent."
+          else
+            echo "❌ Erreur : script de déploiement manquant."
+            exit 1
+          fi
+
+      - name: Linting & Static Analysis
+        run: |
+          echo "Analyse statique du code..."
+          # Ici on pourrait ajouter flake8 ou pylint

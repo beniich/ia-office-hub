@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     # ── Audit & Logs (SOC 2 CC7) ─────────────────────────────────
     LOG_LEVEL: str = "INFO"
     AUDIT_LOG_RETENTION_DAYS: int = 365   # SOC 2 exige 12 mois minimum
+    AUDIT_LOG_RETENTION_YEARS: int = 7    # Pour la preuve numérique immuable
+    AUDIT_SECRET_SALT: str    # Doit être défini dans .env
     LOG_TO_FILE: bool = True
     LOG_FILE_PATH: str = "/app/logs/audit.log"
 

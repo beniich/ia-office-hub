@@ -5,17 +5,22 @@ POST /analyze  → Lance un diagnostic IA sur un projet
 POST /generate → Génère un PPT d'orientation via OpenOffice
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy.orm import Session
 
 from app.core.security import require_manager, TokenData
+from app.db.database import get_db
 from app.services.ai_service import AIAgent
-from app.services.audit_service import AuditLogger
+from app.services.audit_service import audit_engine, AuditCategory, AuditSeverity, AuditClassification
+from app.services.audit_report_service import AuditReportService
 
 router = APIRouter()
-audit = AuditLogger()
+audit = audit_engine # Utilisation du nouveau moteur
 ai_agent = AIAgent()
+compliance_service = AuditReportService()
 
 # ── Schémas (Pydantic) ────────────────────────────────────────
 
@@ -91,3 +96,50 @@ async def run_diagnostic(project_id: int, doc_id: int):
     """
     result = ai_agent.generate_financial_diagnostic(project_id, doc_id)
     return result
+
+@router.get("/compliance-pack/{project_id}")
+async def download_compliance_pack(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_manager)
+):
+    """
+    [Manager/Admin] Génère et télécharge le dossier de preuve numérique (ODT).
+    L'action est elle-même logguée dans le système d'audit.
+    """
+    try:
+        # 1. Génération du rapport
+        file_path = compliance_service.generate_compliance_pack(db, project_id)
+        
+        # 2. Audit de l'action de téléchargement
+        audit.capture_event(
+            db=db,
+            user_id=current_user.username,
+            action_name="AUDIT_REPORT_DOWNLOADED",
+            category=AuditCategory.COMPLIANCE,
+            severity=AuditSeverity.INFO,
+            classification=AuditClassification.CONFIDENTIAL,
+            organization_id=str(project_id),
+            ip_address=request.client.host,
+            new_value={"report_path": file_path}
+        )
+        
+        # 3. Retour du fichier
+        return FileResponse(
+            path=file_path,
+            filename=f"Compliance_Pack_P{project_id}.odt",
+            media_type="application/vnd.oasis.opendocument.text"
+        )
+        
+    except Exception as e:
+        audit.capture_event(
+            db=db,
+            user_id=current_user.username,
+            action_name="AUDIT_REPORT_DOWNLOAD_FAILED",
+            category=AuditCategory.SECURITY,
+            severity=AuditSeverity.ERROR,
+            organization_id=str(project_id),
+            new_value={"error": str(e)}
+        )
+        raise HTTPException(status_code=500, detail="Échec de la génération du rapport de conformité")

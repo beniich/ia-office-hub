@@ -1,20 +1,50 @@
-
+# ─── Docker Compose Production : IA Office Hub ────────────────
 version: '3.8'
+
 services:
   backend:
-    build: 
+    build:
       context: ../..
       dockerfile: infra/docker/Dockerfile
-    ports:
-      - "8000:8000"
-    env_file: ../../.env
-  frontend:
-    image: node:16
-    ports:
-      - "3000:3000"
+    restart: always
+    env_file:
+      - ../../.env
+    volumes:
+      - audit_logs:/app/logs
+      - document_storage:/app/uploads
+      - output_files:/app/output
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - internal_network
+
   apache_proxy:
     image: httpd:latest
+    restart: always
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./apache/httpd.conf:/usr/local/apache2/conf/httpd.conf
+      - ./../apache/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro
+      - ../../frontend/dist:/usr/local/apache2/htdocs/:ro
+      - certs:/usr/local/apache2/conf/ssl/
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - internal_network
+    environment:
+      - TZ=Europe/Paris
+
+networks:
+  internal_network:
+    driver: bridge
+
+volumes:
+  audit_logs:            # Persistance des preuves numériques (SOC 2)
+  document_storage:      # Stockage des documents confidentiels
+  output_files:         # Dossier des diagnostics générés
+  certs:                # Stockage des certificats SSL/TLS
